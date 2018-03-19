@@ -28,9 +28,13 @@ source.exclude_dirs = test, bin, out
 #source.exclude_patterns = license,images/*/*.jpg
 
 # (str) Application versioning (method 1)
-version = 0.03
+version = 0.07
 
-# 0.03 version avec tout
+# 0.07 https://stackoverflow.com/questions/48725890/runtimeerror-there-is-no-current-event-loop-in-thread-thread-1-multithreadi
+# 0.06 pb ip
+# 0.05 freq 1s
+# 0.04 ip provisoire
+# 0.03 version avec reception tcp
 # 0.02 ajout Source files to include ini 
 # 0.01 avec asyncio, 1er test
 
@@ -40,7 +44,7 @@ version = 0.03
 
 # (list) Application requirements
 # comma seperated e.g. requirements = sqlite3,kivy
-requirements=python3crystax==3.5,kivy
+requirements=python3crystax==3.5.3,kivy
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes

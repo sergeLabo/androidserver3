@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
+
+import ast
+import subprocess
+
+
 def get_ip_address():
     """La commande en terminal:
     hostname -I
@@ -13,11 +18,12 @@ def get_ip_address():
         ip_long = subprocess.check_output(IP_CMD, shell=True)
         
         # espace\n à la fin à couper
-        ip = str(ip_long)[:-2]
+        ip = str(ip_long)[:-4]
+        ip = ip.decode("utf-8")
     except:
-        ip = "127.0.0.1"
+        ip = "192.168.1.4"
         
-    print("IP Android =", ip, type(ip))
+    print("IP Android =", ip)
     return ip
 
 def datagram_decode(data):
@@ -42,3 +48,7 @@ def datagram_decode(data):
     else:
         #print("Message reçu: None")
         return None
+
+if __name__ == "__main__":
+    
+    get_ip_address()

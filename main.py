@@ -2,7 +2,31 @@
 # -*- coding: UTF-8 -*-
 
 
-"""sans twisted, avec asyncio, en python3"""
+"""
+sans twisted, avec asyncio, en python3
+
+AndroidServerApp ---------> config
+        |
+      crée
+        |
+        MainScreen
+                | 
+               crée
+                |       
+               Game
+                 | 
+              hérite de
+                 |                    
+                MyTCPServerFactory et de MulticastIpSender
+                    | 
+                  hérite de
+                    |                  
+                  MyTCPServer
+
+doc lien donné par doc officielle sur super()
+https://rhettinger.wordpress.com/2011/05/26/super-considered-super/
+
+"""
 
 
 import os
@@ -11,79 +35,78 @@ import subprocess
 from time import time, sleep
 import threading
 import json
-import ast
+
 import asyncio
 import asyncio.streams
-
 
 import kivy
 kivy.require('1.10.0')
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.properties import StringProperty
+from kivy.clock import Clock
 
-from labconfig3 import MyConfig
 from tools import datagram_decode, get_ip_address
 from labmulticast import Multicast
 
 
 class MulticastIpSender(Multicast):
     
+    def __init__(self, config):
         
-    def __init__(self, ip, port):  #, **kwargs):
- 
-        # python2
-        #super(MulticastIpSender, self).__init__(ip, port, **kwargs)
+        print("Lancement de la boucle Multicast")
+        self.config = config
+        self.multi_ip = self.config.get('network', 'multi_ip')
+        self.multi_port = int(self.config.get('network', 'multi_port'))
+        self.multi_addr = self.multi_ip, self.multi_port
+        print("Adresse Multicast:", self.multi_addr)
         
-        # python3
-        super().__init__()
+        super().__init__(self.multi_ip, self.multi_port)
         
-        # ("224.0.0.11", 18888)
-        self.multi_addr = ip, port
-    
-    def get_conf(self):
-        """Retourne la tempo de la boucle de Clock."""
-
-        config = AndroidServerApp.get_running_app().config
-        freq = int(config.get('network', 'freq'))
+        # Lancement de l'envoi permanent
+        self.ip_send_thread()
         
     def ip_send(self):
+        tcp_ip = get_ip_address()
+        tcp_port = int(self.config.get('network', 'tcp_port'))
         
-        mcast = {"Ip Adress": (tcp_ip, tcp_port)}
-        resp = json.dumps(mcast).encode("utf-8")
+        m = {"TCP Adress": (tcp_ip, tcp_port)}
+        msg = json.dumps(m).encode("utf-8")
         
         while 1:
+            #print("Envoi de ", m)
             sleep(1)
-            
-            # j'envoie
-            print("Envoi")
-            my_multicast.send_to(resp, self.multi_addr)
-            sleep(0.01)
-            
-            # je recois
-            data = my_multicast.receive()
-            print("Réception:", data)
+            self.send_to(msg, self.multi_addr)
 
     def ip_send_thread(self):
-        thread_s = threading.Thread(target=self.p_send)
+        thread_s = threading.Thread(target=self.ip_send)
         thread_s.start()
         
         
-class MyServer:
+class MyTCPServer:
     """My TCP server"""
 
-    def __init__(self):
+    def __init__(self, config):
         """this keeps track of all the clients that connected to our
         server.  It can be useful in some cases, for instance to
         kill client connections or to broadcast some data to all
         clients...
         """
+        
+        print("Lancement de la boucle TCP")
+        
+        self.tcp_port = int(config.get('network', 'tcp_port')) 
+        self.tcp_ip = get_ip_address()
+        
         # encapsulates the server sockets
         self.server = None
 
         # task -> (reader, writer)
         self.clients = {} 
-
+        
+        # Le message reçu en TCP
+        self.recv = ""
+        
     def _accept_client(self, client_reader, client_writer):
         """This method accepts a new client connection and creates
         a Task to handle this client. 
@@ -91,11 +114,11 @@ class MyServer:
         """
 
         # start a new Task to handle this specific client connection
-        task = asyncio.Task(self._handle_client(client_reader,
-                                                client_writer))
+        task = asyncio.Task(self._handle_client(client_reader, client_writer))
                                                 
         self.clients[task] = (client_reader, client_writer)
-
+        print("Client accepté")
+        
         def client_done(task):
             print("client task done:", task, file=sys.stderr)
             del self.clients[task]
@@ -110,19 +133,30 @@ class MyServer:
         out one or more lines back to the client with the result.
         """
         
+        print("Réception:")
         while True:
-            data = (yield from client_reader.readline()).decode("utf-8")
             
-            # an empty string means the client disconnected
+            # Les envois se finnissent toujours par \n
+            d = yield from client_reader.readline()
+            data = d.decode("utf-8")
+            #print("Reception de:", data)
+            self.recv = data[:-1]
+                
             if not data: 
+                self.recv = ""
+                print("Pas de data reçues") 
                 break
                 
             cmd, *args = data.rstrip().split(' ')
+
             if cmd == 'add':
                 arg1 = float(args[0])
                 arg2 = float(args[1])
                 retval = arg1 + arg2
-                client_writer.write("{!r}\n".format(retval).encode("utf-8"))
+                print("Somme des arguments = ", retval)
+                r = "{!r}\n".format(retval).encode("utf-8")
+                client_writer.write(r)
+                
             elif cmd == 'repeat':
                 times = int(args[0])
                 msg = args[1]
@@ -131,30 +165,33 @@ class MyServer:
                     client_writer.write("{}. {}\n".format(idx+1, msg)
                                         .encode("utf-8"))
                 client_writer.write("end\n".encode("utf-8"))
+                
             else:
-                print("Bad command {!r}".format(data), file=sys.stderr)
+                pass
+                #print("Bad command {!r}".format(data), file=sys.stderr)
 
             # This enables us to have flow control in our connection.
             yield from client_writer.drain()
 
     def start(self, loop):
-        """Starts the TCP server, so that it listens on port 12345.
+        """Starts the TCP server, so that it listens on port 8000.
 
         For each client that connects, the accept_client method gets
         called.  This method runs the loop until the server sockets
         are ready to accept connections.
         """
         
+        
         coro = asyncio.streams.start_server(self._accept_client,
-                                            '127.0.0.1', 
-                                            12345,
+                                            self.tcp_ip, 
+                                            self.tcp_port,
                                             loop=loop)
         print("start", loop)
         self.server = loop.run_until_complete(coro)
         
         # Serve requests until Ctrl+C is pressed
         addr = self.server.sockets[0].getsockname()
-        print('Serving on {}'.format(addr))
+        print('\nServing on {}\n'.format(addr))
         try:
             loop.run_forever()
         except KeyboardInterrupt:
@@ -171,35 +208,69 @@ class MyServer:
             self.server = None
 
 
+class MyTCPServerFactory:
+    
+    def __init__(self, config):
+        print("Lancement de l'usine TCP")
+        self.tcp_main(config)
+        
+    def worker(self, loop):
+        """Il faut bien que quelqu'un travaille"""
+        
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.server.start(loop))
+
+    def tcp_main(self, config):
+        self.server = MyTCPServer(config)
+        loop = asyncio.new_event_loop()
+        wt = threading.Thread(target=self.worker, args=(loop,))
+        wt.start() 
+        
+#class Game(MulticastIpSender, MyTCPServerFactory):
+class Game(MyTCPServerFactory):
+    def __init__(self, config):
+        super(Game, self).__init__(config)
+        
+        self.config = config
+        
+        freq = int(self.config.get('network', 'freq'))      
+        tempo = 1 / freq
+        print("Rafraississement du jeu tous les", tempo)
+        self.event = Clock.schedule_interval(self.game_update, tempo)
+        
+    def game_update(self, dt):
+        if self.server.recv:
+            print("\nRéception de:", self.server.recv)
+            sm = self.get_screen_manager()
+            sm.current_screen.info = self.server.recv
+        
+    def get_screen_manager(self):
+        return AndroidServerApp.get_running_app().screen_manager
+    
+    
 class MainScreen(Screen):
     """Ecran principal"""
 
     info = StringProperty()
     
-    def __init__(self, **kwargs):
-        super(MainScreen, self).__init__(**kwargs)
+    def __init__(self, **kwargs): 
+        """
+        def __init__(self, **kwargs):
+            super(MainScreen, self).__init__(**kwargs)
+        """
         
-        self.display_info_thread()
+        super().__init__(**kwargs)
+        
+        ip = "224.0.0.11"
+        port = 18888
+        
+        # Récup config
+        self.config = AndroidServerApp.get_running_app().config
+        
+        # L'objet jeu
+        self.game = Game(self.config)
+        
         print("Initialisation de MainScreen ok")
-        
-        # Construit le réseau, tourne tout le temps
-        scr_manager = self.get_screen_manager()
-        
-        # existe dans AndroidServerApp !
-        #self.server = MyServer(scr_manager)
-        
-    def get_screen_manager(self):
-        return AndroidServerApp.get_running_app().screen_manager
-        
-    def display_info(self):
-        while 1:
-            sleep(1)
-            print(self.info)
-            self.info = "test" + "\n" + "toto"
-
-    def display_info_thread(self):
-        thread_d = threading.Thread(target=self.display_info)
-        thread_d.start()
 
     
 SCREENS = { 0: (MainScreen, "Main")}
@@ -207,9 +278,9 @@ SCREENS = { 0: (MainScreen, "Main")}
 
 class AndroidServerApp(App):
     
-    def build(self):
+    def build(self, **kwargs):
         """Exécuté en premier après run()"""
-        
+                
         # Creation des ecrans
         self.screen_manager = ScreenManager()
         for i in range(len(SCREENS)):
@@ -219,12 +290,7 @@ class AndroidServerApp(App):
 
     def on_start(self):
         """Exécuté apres build()"""
-            
-        # Lancement asyncio
-        main()
-        
-        # Lancement multicast
-        MulticastIpSender()
+        pass
         
     def build_config(self, config):
         """Si le fichier *.ini n'existe pas,
@@ -233,10 +299,10 @@ class AndroidServerApp(App):
         """
 
         config.setdefaults('network',
-                            { 'multi_ip': '221.0.0.11',
+                            { 'multi_ip': '224.0.0.11',
                               'multi_port': '18888',
                               'tcp_port': '8000',
-                              'freq': '60'})
+                              'freq': '1'})
 
         config.setdefaults('kivy',
                             { 'log_level': 'debug',
@@ -254,12 +320,35 @@ class AndroidServerApp(App):
         appelé par app.open_settings() dans .kv
         """
 
-        data = """[{"type": "title", "title":"Configuration du réseau"},
-                      {"type": "numeric",
-                      "title": "Fréquence",
-                      "desc": "Fréquence entre 1 et 60 Hz",
-                      "section": "network", "key": "freq"}
-                   ]"""
+        data =  """[{"type": "title", "title":"Réseau"},
+                            {  "type":    "numeric",
+                                "title":   "Fréquence",
+                                "desc":    "Fréquence entre 1 et 60 Hz",
+                                "section": "network", 
+                                "key":     "freq"},
+                             
+                    {"type": "title", "title":"Réseau"},
+                            {   "type":    "string",
+                                "title":   "IP Multicast",
+                                "desc":    "IP Multicast",
+                                "section": "network", 
+                                "key":     "multi_ip"},
+                                
+                    {"type": "title", "title":"Réseau"},
+                            {   "type":    "numeric",
+                                "title":   "Port Multicast",
+                                "desc":    "Port Multicast",
+                                "section": "network", 
+                                "key":     "multi_port"},
+                                
+                    {"type": "title", "title":"Réseau"},
+                            {   "type":    "numeric",
+                                "title":   "TCP Port",
+                                "desc":    "TCP Port",
+                                "section": "network", 
+                                "key":     "tcp_port"}
+                    ]
+                """
 
         # self.config est le config de build_config
         settings.add_json_panel('AndroidServer', self.config, data=data)
@@ -296,21 +385,15 @@ class AndroidServerApp(App):
         os._exit(0)
 
 
-def always(server, loop):
-    thread_msg = threading.Thread(target=server_thread,
-                                  args=(server, loop,))
-    thread_msg.start()
-        
-def server_thread(server, loop):
-    server.start(loop)
-        
-def main():
-    loop = asyncio.get_event_loop()
-
-    # creates a server and starts listening to TCP connections
-    server = MyServer()
-    always(server, loop)
-
-
 if __name__ == "__main__":
     AndroidServerApp().run()
+
+
+    # #def get_conf(self):
+        # #"""Retourne la tempo de la boucle de Clock."""
+
+        # #config = AndroidServerApp.get_running_app().config
+        # #freq = int(config.get('network', 'freq'))
+
+    # #def get_screen_manager(self):
+        # #return AndroidServerApp.get_running_app().screen_manager

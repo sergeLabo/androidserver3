@@ -9,6 +9,7 @@ class Multicast:
     """ Récupère des datas en Multicast: sans try"""
 
     def __init__(self, ip, port, buffer_size=1024):
+        print("Création d'un socket multicast", ip, port)
         self.ANY = "0.0.0.0"
         self.MCAST_ADDR = ip
         self.MCAST_PORT = port
@@ -21,7 +22,9 @@ class Multicast:
         # Création d'un socket
 
         # Create a UDP socket
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self.sock = socket.socket(socket.AF_INET, 
+                                  socket.SOCK_DGRAM,
+                                  socket.IPPROTO_UDP)
 
         # Allow multiple sockets to use the same PORT number
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -30,7 +33,9 @@ class Multicast:
         self.sock.bind((self.ANY, self.MCAST_PORT))
 
         # Tell the kernel that we are a multicast socket
-        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        self.sock.setsockopt(socket.IPPROTO_IP, 
+                             socket.IP_MULTICAST_TTL, 
+                             2)
 
         # Tell the kernel that we want to add ourselves to a multicast group
         # The address for the multicast group is the third param
@@ -43,11 +48,14 @@ class Multicast:
 
         # Limite la taille du buffer UDP pour éviter la latence,
         # le buffer est vidé à chaque lecture
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.buffer_size)
+        self.sock.setsockopt(socket.SOL_SOCKET,
+                             socket.SO_RCVBUF,
+                             self.buffer_size)
 
         s = "Socket multicast créé avec IP = {} Port = {} Buffer = {}\n"
-        print(s.format(self.MCAST_ADDR, self.MCAST_PORT,
-               self.buffer_size))
+        print(s.format(self.MCAST_ADDR,
+                       self.MCAST_PORT,
+                       self.buffer_size))
 
     def receive(self):
         """Retourne les datas brutes reçue sur multicast."""
@@ -81,4 +89,4 @@ if __name__ == "__main__":
         sleep(0.1)
         # je recois
         data = my_multicast.receive()
-        print(data)
+        print("réception", data)
