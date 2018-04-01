@@ -2,7 +2,10 @@
 
 Un serveur de jeu en TCP (et Multicast) sur un réseau local.
 
-## Réalisé avec Kivy et Buildozer
+## Réalisé avec Kivy, Twisted et compilé avec Buildozer
+
+## Compilation impossible en Mars 2018
+
 
 ### Python 3.5
 Sur debian strectch 9.4

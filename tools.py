@@ -16,14 +16,16 @@ def get_ip_address():
         IP_CMD = "hostname -I"
         
         ip_long = subprocess.check_output(IP_CMD, shell=True)
-        
+        ip = ip_long.decode("utf-8")
         # espace\n à la fin à couper
-        ip = str(ip_long)[:-4]
-        ip = ip.decode("utf-8")
+        ip = ip[:-2]
+
     except:
         ip = "192.168.1.4"
-        
-    print("IP Android =", ip)
+    print("IP = {} de type {} len {}".format(ip, 
+                                               type(ip),
+                                               len(ip)))
+
     return ip
 
 def datagram_decode(data):
